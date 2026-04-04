@@ -1,11 +1,11 @@
-name: Deploy API
+name: Deploy Worker
 on:
   push:
     branches: [ main ]
 
 jobs:
   pull:
-    runs-on: [self-hosted, api-deploy]
+    runs-on: [self-hosted, worker-deploy]
 
     steps:
       - name: Checkout Code
@@ -13,5 +13,5 @@ jobs:
 
       - name: Verify Pull
         run: |
-          echo "API code updated at $(date)"
+          echo "Worker code updated at $(date)"
           ls -la
