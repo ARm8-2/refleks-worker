@@ -1,0 +1,10 @@
+.git
+.gitignore
+.vscode
+.devcontainer
+references
+README.md
+docs
+.env
+.env.*
+*.refleks
