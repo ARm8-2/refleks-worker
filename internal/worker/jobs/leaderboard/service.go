@@ -1,0 +1,204 @@
+package leaderboard
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"refleks-worker/internal/worker"
+)
+
+const jobName = "leaderboard_refresh"
+
+const refreshScenarioLeaderboardSQL = `
+	INSERT INTO scenario_leaderboard_current (
+		scenario_id,
+		account_id,
+		rank,
+		best_score,
+		best_epoch_milli,
+		updated_at
+	)
+	WITH per_account_best AS (
+		SELECT DISTINCT ON (r.scenario_id, r.account_id)
+			r.scenario_id,
+			r.account_id,
+			r.score AS best_score,
+			r.epoch_milli AS best_epoch_milli
+		FROM runs r
+		WHERE r.account_id IS NOT NULL
+			AND r.score IS NOT NULL
+		ORDER BY
+			r.scenario_id,
+			r.account_id,
+			r.score DESC,
+			r.epoch_milli ASC,
+			r.id ASC
+	), ranked AS (
+		SELECT
+			p.scenario_id,
+			p.account_id,
+			p.best_score,
+			p.best_epoch_milli,
+			ROW_NUMBER() OVER (
+				PARTITION BY p.scenario_id
+				ORDER BY
+					p.best_score DESC,
+					p.best_epoch_milli ASC,
+					p.account_id ASC
+			) AS rank
+		FROM per_account_best p
+	)
+	SELECT
+		r.scenario_id,
+		r.account_id,
+		r.rank,
+		r.best_score,
+		r.best_epoch_milli,
+		NOW()
+	FROM ranked r
+	WHERE r.rank <= $1
+`
+
+const refreshBenchmarkLeaderboardSQL = `
+	INSERT INTO benchmark_difficulty_leaderboard_current (
+		difficulty_id,
+		account_id,
+		rank,
+		composite_score,
+		matched_scenarios,
+		last_epoch_milli,
+		updated_at
+	)
+	WITH per_account_best AS (
+		SELECT DISTINCT ON (r.scenario_id, r.account_id)
+			r.scenario_id,
+			r.account_id,
+			r.score AS best_score,
+			r.epoch_milli AS best_epoch_milli
+		FROM runs r
+		WHERE r.account_id IS NOT NULL
+			AND r.score IS NOT NULL
+		ORDER BY
+			r.scenario_id,
+			r.account_id,
+			r.score DESC,
+			r.epoch_milli ASC,
+			r.id ASC
+	), difficulty_scores AS (
+		SELECT
+			bds.difficulty_id,
+			pab.account_id,
+			SUM(pab.best_score * bds.weight) AS composite_score,
+			COUNT(*) AS matched_scenarios,
+			MAX(pab.best_epoch_milli) AS last_epoch_milli
+		FROM benchmark_difficulty_scenarios bds
+		JOIN per_account_best pab ON pab.scenario_id = bds.scenario_id
+		GROUP BY bds.difficulty_id, pab.account_id
+	), ranked AS (
+		SELECT
+			ds.difficulty_id,
+			ds.account_id,
+			ds.composite_score,
+			ds.matched_scenarios,
+			ds.last_epoch_milli,
+			ROW_NUMBER() OVER (
+				PARTITION BY ds.difficulty_id
+				ORDER BY
+					ds.composite_score DESC,
+					ds.last_epoch_milli ASC,
+					ds.account_id ASC
+			) AS rank
+		FROM difficulty_scores ds
+	)
+	SELECT
+		r.difficulty_id,
+		r.account_id,
+		r.rank,
+		r.composite_score,
+		r.matched_scenarios,
+		r.last_epoch_milli,
+		NOW()
+	FROM ranked r
+	WHERE r.rank <= $1
+`
+
+// Service recomputes leaderboard tables.
+type Service struct {
+	pool    *pgxpool.Pool
+	maxRank int
+}
+
+// Config controls leaderboard refresh behavior.
+type Config struct {
+	MaxRank int
+}
+
+// NewService creates a leaderboard refresh service.
+func NewService(pool *pgxpool.Pool, cfg Config) (*Service, error) {
+	if pool == nil {
+		return nil, fmt.Errorf("database pool is required")
+	}
+	if cfg.MaxRank <= 0 {
+		return nil, fmt.Errorf("max rank must be greater than zero")
+	}
+	return &Service{
+		pool:    pool,
+		maxRank: cfg.MaxRank,
+	}, nil
+}
+
+// Name returns the job name.
+func (s *Service) Name() string {
+	return jobName
+}
+
+// Run executes one leaderboard refresh.
+func (s *Service) Run(ctx context.Context) (worker.Result, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return worker.Result{}, fmt.Errorf("begin leaderboard transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `TRUNCATE TABLE scenario_leaderboard_current`); err != nil {
+		return worker.Result{}, fmt.Errorf("truncate scenario leaderboard: %w", err)
+	}
+
+	scenarioTag, err := tx.Exec(ctx, refreshScenarioLeaderboardSQL, s.maxRank)
+	if err != nil {
+		return worker.Result{}, fmt.Errorf("refresh scenario leaderboard: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx, `TRUNCATE TABLE benchmark_difficulty_leaderboard_current`); err != nil {
+		return worker.Result{}, fmt.Errorf("truncate benchmark leaderboard: %w", err)
+	}
+
+	benchmarkTag, err := tx.Exec(ctx, refreshBenchmarkLeaderboardSQL, s.maxRank)
+	if err != nil {
+		return worker.Result{}, fmt.Errorf("refresh benchmark leaderboard: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return worker.Result{}, fmt.Errorf("commit leaderboard refresh: %w", err)
+	}
+
+	scenarioRows := scenarioTag.RowsAffected()
+	benchmarkRows := benchmarkTag.RowsAffected()
+
+	return worker.Result{
+		Status: worker.OutcomeSuccess,
+		Message: fmt.Sprintf(
+			"refreshed %d scenario rows and %d benchmark rows",
+			scenarioRows,
+			benchmarkRows,
+		),
+		Details: map[string]any{
+			"scenarioRows":  scenarioRows,
+			"benchmarkRows": benchmarkRows,
+			"maxRank":       s.maxRank,
+		},
+	}, nil
+}
