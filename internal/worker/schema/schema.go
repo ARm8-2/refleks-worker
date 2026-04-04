@@ -3,10 +3,13 @@ package schema
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+const migrationDonePath = "/tmp/migration-done"
 
 // Ensure bootstraps all tables needed by the worker.
 func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
@@ -193,6 +196,10 @@ func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
 
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit schema transaction: %w", err)
+	}
+
+	if err := os.WriteFile(migrationDonePath, []byte("ok"), 0o644); err != nil {
+		return fmt.Errorf("write migration marker: %w", err)
 	}
 
 	return nil

@@ -59,6 +59,18 @@ Notes:
 1. One scenario can map to multiple benchmark difficulties through `benchmark_difficulty_scenarios`.
 2. Benchmark source sync is hash-based and idempotent.
 3. Jobs are execution-tracked in `worker_job_runs` with status and details JSON.
+4. After schema bootstrap succeeds, the worker writes `/tmp/migration-done` so container healthchecks can wait on schema initialization.
+
+Example Docker Compose healthcheck:
+
+```yaml
+worker:
+	healthcheck:
+		test: ["CMD", "test", "-f", "/tmp/migration-done"]
+		interval: 5s
+		timeout: 5s
+		retries: 5
+```
 
 ## Benchmark sync source file
 

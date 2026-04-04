@@ -32,6 +32,10 @@ func main() {
 }
 
 func run() error {
+	if err := os.Remove("/tmp/migration-done"); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("clear migration marker: %w", err)
+	}
+
 	cfg, err := config.Load(version)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
