@@ -1,0 +1,17 @@
+name: Deploy Worker
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  pull:
+    runs-on: [self-hosted, worker-deploy]
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Verify Pull
+        run: |
+          echo "Worker code updated at $(date)"
+          ls -la
