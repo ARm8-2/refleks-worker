@@ -1,0 +1,17 @@
+name: Deploy API
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  pull:
+    runs-on: [self-hosted, api-deploy]
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Verify Pull
+        run: |
+          echo "API code updated at $(date)"
+          ls -la
