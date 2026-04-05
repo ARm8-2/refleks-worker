@@ -50,6 +50,7 @@ Worker bootstraps required tables idempotently at startup.
 3. Benchmark tables:
 	- `benchmarks`
 	- `benchmark_difficulties`
+	- `benchmark_difficulty_ranks`
 	- `benchmark_categories`
 	- `benchmark_subcategories`
 	- `benchmark_difficulty_scenarios`
@@ -73,7 +74,7 @@ By default the worker reads:
 
 Use a bind mount or volume so uploaded benchmark JSON is visible in the worker container.
 
-The worker now enriches benchmark definitions with ordered scenario names and per-scenario rank thresholds from the Kovaaks progress endpoint (using a random 17-digit Steam ID), so scenario links are fully populated from the same source shape used by the app reference `benchmarks_data.json`.
+The worker now enriches benchmark definitions with ordered scenario names and per-scenario rank thresholds from the Kovaaks progress endpoint (using a random 17-digit Steam ID). Ordered rank definitions are taken directly from `rankColors` in the source `benchmarks_data.json` and preserved exactly as written.
 
 ## Parquet source and output
 

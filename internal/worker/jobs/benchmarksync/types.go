@@ -14,9 +14,15 @@ type sourceDifficulty struct {
 	DifficultyName     string            `json:"difficultyName"`
 	KovaaksBenchmarkID int64             `json:"kovaaksBenchmarkId"`
 	Sharecode          string            `json:"sharecode"`
-	RankColors         map[string]string `json:"rankColors"`
+	RankColors         []sourceRankColor `json:"-"`
 	Categories         []sourceCategory  `json:"categories"`
 	MergedScenarios    []mergedScenario  `json:"-"`
+	MergedRanks        []mergedRank      `json:"-"`
+}
+
+type sourceRankColor struct {
+	Name  string
+	Color string
 }
 
 type sourceCategory struct {
@@ -37,4 +43,23 @@ type mergedScenario struct {
 	SubcategoryName string
 	SortOrder       int
 	RankThresholds  []float64
+}
+
+type mergedRank struct {
+	Name      string
+	Color     string
+	SortOrder int
+}
+
+type difficultyScenarioLink struct {
+	Name            string
+	CategoryName    string
+	SubcategoryName string
+	SortOrder       int
+	RankThresholds  []float64
+}
+
+type progressScenarioDefinition struct {
+	Name           string
+	RankThresholds []float64
 }

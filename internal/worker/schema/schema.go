@@ -110,13 +110,23 @@ func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
 			difficulty_name TEXT NOT NULL,
 			kovaaks_benchmark_id BIGINT NOT NULL UNIQUE,
 			sharecode TEXT NOT NULL DEFAULT '',
-			rank_colors JSONB NOT NULL DEFAULT '{}'::jsonb,
 			sort_order INT NOT NULL DEFAULT 0,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			UNIQUE (benchmark_id, difficulty_name)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_benchmark_difficulties_benchmark_order ON benchmark_difficulties (benchmark_id, sort_order)`,
+
+		`CREATE TABLE IF NOT EXISTS benchmark_difficulty_ranks (
+			difficulty_id BIGINT NOT NULL REFERENCES benchmark_difficulties(id) ON DELETE CASCADE,
+			rank_name TEXT NOT NULL,
+			rank_color TEXT NOT NULL DEFAULT '',
+			sort_order INT NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (difficulty_id, sort_order)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_benchmark_difficulty_ranks_difficulty ON benchmark_difficulty_ranks (difficulty_id, sort_order)`,
 
 		`CREATE TABLE IF NOT EXISTS benchmark_categories (
 			id BIGSERIAL PRIMARY KEY,

@@ -1,7 +1,6 @@
 package benchmarksync
 
 import (
-	"bytes"
 	"context"
 	crand "crypto/rand"
 	"crypto/sha256"
@@ -10,11 +9,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math"
 	"math/big"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -26,12 +23,11 @@ import (
 )
 
 const (
-	jobName                      = "benchmark_sync"
-	stateKeyFile                 = "source_file"
-	benchmarkSourceFormatVersion = 3
-	maxSourceFileBytes           = 100 << 20
-	maxProgressBodyBytes         = 10 << 20
-	kovaaksPlayerProgressURL     = "https://kovaaks.com/webapp-backend/benchmarks/player-progress-rank-benchmark?benchmarkId=%d&steamId=%s"
+	jobName                  = "benchmark_sync"
+	stateKeyFile             = "source_file"
+	maxSourceFileBytes       = 100 << 20
+	maxProgressBodyBytes     = 10 << 20
+	kovaaksPlayerProgressURL = "https://kovaaks.com/webapp-backend/benchmarks/player-progress-rank-benchmark?benchmarkId=%d&steamId=%s"
 )
 
 // Config controls benchmark sync behavior.
@@ -49,33 +45,20 @@ type Service struct {
 }
 
 type sourceFingerprint struct {
-	FormatVersion int       `json:"formatVersion"`
-	Path          string    `json:"path"`
-	Hash          string    `json:"hash"`
-	SizeBytes     int64     `json:"sizeBytes"`
-	ModTime       time.Time `json:"modTime"`
-	SyncedAt      time.Time `json:"syncedAt"`
+	Path      string    `json:"path"`
+	Hash      string    `json:"hash"`
+	SizeBytes int64     `json:"sizeBytes"`
+	ModTime   time.Time `json:"modTime"`
+	SyncedAt  time.Time `json:"syncedAt"`
 }
 
 type syncSummary struct {
 	Benchmarks    int
 	Difficulties  int
+	RankDefs      int
 	Categories    int
 	Subcategories int
 	ScenarioLinks int
-}
-
-type difficultyScenarioLink struct {
-	Name            string
-	CategoryName    string
-	SubcategoryName string
-	SortOrder       int
-	RankThresholds  []float64
-}
-
-type progressScenarioDefinition struct {
-	Name           string
-	RankThresholds []float64
 }
 
 // NewService creates a benchmark sync service.
@@ -118,14 +101,13 @@ func (s *Service) Run(ctx context.Context) (worker.Result, error) {
 		return worker.Result{}, fmt.Errorf("load previous benchmark sync state: %w", err)
 	}
 
-	if hasPrevious && previous.Hash == fingerprint.Hash && previous.FormatVersion == fingerprint.FormatVersion {
+	if hasPrevious && previous.Hash == fingerprint.Hash {
 		return worker.Result{
 			Status:  worker.OutcomeSkipped,
 			Message: "benchmark source file unchanged",
 			Details: map[string]any{
-				"path":          previous.Path,
-				"hash":          previous.Hash,
-				"formatVersion": previous.FormatVersion,
+				"path": previous.Path,
+				"hash": previous.Hash,
 			},
 		}, nil
 	}
@@ -151,17 +133,18 @@ func (s *Service) Run(ctx context.Context) (worker.Result, error) {
 	return worker.Result{
 		Status: worker.OutcomeSuccess,
 		Message: fmt.Sprintf(
-			"synced %d benchmarks, %d difficulties, %d scenario links",
+			"synced %d benchmarks, %d difficulties, %d rank defs, %d scenario links",
 			summary.Benchmarks,
 			summary.Difficulties,
+			summary.RankDefs,
 			summary.ScenarioLinks,
 		),
 		Details: map[string]any{
 			"path":          fingerprint.Path,
 			"hash":          fingerprint.Hash,
-			"formatVersion": fingerprint.FormatVersion,
 			"benchmarks":    summary.Benchmarks,
 			"difficulties":  summary.Difficulties,
+			"rankDefs":      summary.RankDefs,
 			"categories":    summary.Categories,
 			"subcategories": summary.Subcategories,
 			"scenarioLinks": summary.ScenarioLinks,
@@ -191,11 +174,10 @@ func (s *Service) readSource() ([]byte, sourceFingerprint, error) {
 
 	sum := sha256.Sum256(raw)
 	fingerprint := sourceFingerprint{
-		FormatVersion: benchmarkSourceFormatVersion,
-		Path:          s.sourcePath,
-		Hash:          hex.EncodeToString(sum[:]),
-		SizeBytes:     info.Size(),
-		ModTime:       info.ModTime().UTC(),
+		Path:      s.sourcePath,
+		Hash:      hex.EncodeToString(sum[:]),
+		SizeBytes: info.Size(),
+		ModTime:   info.ModTime().UTC(),
 	}
 
 	return raw, fingerprint, nil
@@ -339,14 +321,6 @@ func (s *Service) syncToDatabase(ctx context.Context, benchmarks []sourceBenchma
 
 		for difficultyIndex := range benchmark.Difficulties {
 			difficulty := benchmark.Difficulties[difficultyIndex]
-			rankColors := difficulty.RankColors
-			if rankColors == nil {
-				rankColors = map[string]string{}
-			}
-			rankColorsJSON, err := json.Marshal(rankColors)
-			if err != nil {
-				return syncSummary{}, fmt.Errorf("marshal rankColors for %q/%q: %w", benchmark.BenchmarkName, difficulty.DifficultyName, err)
-			}
 
 			var difficultyID int64
 			err = tx.QueryRow(ctx, `
@@ -355,24 +329,44 @@ func (s *Service) syncToDatabase(ctx context.Context, benchmarks []sourceBenchma
 					difficulty_name,
 					kovaaks_benchmark_id,
 					sharecode,
-					rank_colors,
 					sort_order,
 					updated_at
 				)
-				VALUES ($1,$2,$3,$4,$5::jsonb,$6,NOW())
+				VALUES ($1,$2,$3,$4,$5,NOW())
 				RETURNING id
 			`,
 				benchmarkID,
 				difficulty.DifficultyName,
 				difficulty.KovaaksBenchmarkID,
 				difficulty.Sharecode,
-				rankColorsJSON,
 				difficultyIndex,
 			).Scan(&difficultyID)
 			if err != nil {
 				return syncSummary{}, fmt.Errorf("insert difficulty %q/%q: %w", benchmark.BenchmarkName, difficulty.DifficultyName, err)
 			}
 			summary.Difficulties++
+
+			for rankIndex := range difficulty.MergedRanks {
+				rank := difficulty.MergedRanks[rankIndex]
+				if _, err := tx.Exec(ctx, `
+					INSERT INTO benchmark_difficulty_ranks (
+						difficulty_id,
+						rank_name,
+						rank_color,
+						sort_order,
+						updated_at
+					)
+					VALUES ($1,$2,$3,$4,NOW())
+				`,
+					difficultyID,
+					rank.Name,
+					rank.Color,
+					rankIndex,
+				); err != nil {
+					return syncSummary{}, fmt.Errorf("insert rank definition for %q/%q/%q: %w", benchmark.BenchmarkName, difficulty.DifficultyName, rank.Name, err)
+				}
+				summary.RankDefs++
+			}
 
 			for categoryIndex := range difficulty.Categories {
 				category := difficulty.Categories[categoryIndex]
@@ -478,6 +472,7 @@ func (s *Service) syncToDatabase(ctx context.Context, benchmarks []sourceBenchma
 	s.logger.Info("benchmark sync completed",
 		slog.Int("benchmarks", summary.Benchmarks),
 		slog.Int("difficulties", summary.Difficulties),
+		slog.Int("rank_defs", summary.RankDefs),
 		slog.Int("scenario_links", summary.ScenarioLinks),
 	)
 
@@ -516,6 +511,8 @@ func (s *Service) enrichBenchmarks(ctx context.Context, benchmarks []sourceBench
 				return fmt.Errorf("no scenarios returned for %q/%q", benchmark.BenchmarkName, difficulty.DifficultyName)
 			}
 
+			difficulty.MergedRanks = mergedRanksFromSource(difficulty.RankColors)
+
 			difficulty.MergedScenarios = applyProgressScenariosToDifficulty(*difficulty, progressScenarios)
 			if len(difficulty.MergedScenarios) == 0 {
 				return fmt.Errorf("merged scenario mapping empty for %q/%q", benchmark.BenchmarkName, difficulty.DifficultyName)
@@ -553,226 +550,12 @@ func (s *Service) fetchDifficultyProgressScenarios(ctx context.Context, benchmar
 		return nil, fmt.Errorf("progress response exceeded %d bytes", maxProgressBodyBytes)
 	}
 
-	definitions, err := parseProgressScenarioDefinitions(body)
+	scenarios, err := parseProgressScenarioDefinitions(body)
 	if err != nil {
 		return nil, fmt.Errorf("parse progress response: %w", err)
 	}
 
-	return definitions, nil
-}
-
-func parseProgressScenarioDefinitions(raw []byte) ([]progressScenarioDefinition, error) {
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.UseNumber()
-
-	tok, err := dec.Token()
-	if err != nil {
-		return nil, err
-	}
-	if d, ok := tok.(json.Delim); !ok || d != '{' {
-		return nil, fmt.Errorf("progress: expected object start")
-	}
-
-	definitions := make([]progressScenarioDefinition, 0)
-	for dec.More() {
-		keyToken, err := dec.Token()
-		if err != nil {
-			return nil, err
-		}
-		key, _ := keyToken.(string)
-
-		switch key {
-		case "categories":
-			if err := parseProgressCategories(dec, &definitions); err != nil {
-				return nil, err
-			}
-		default:
-			var discard any
-			if err := dec.Decode(&discard); err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	if _, err := dec.Token(); err != nil {
-		return nil, err
-	}
-
-	return definitions, nil
-}
-
-func parseProgressCategories(dec *json.Decoder, definitions *[]progressScenarioDefinition) error {
-	tok, err := dec.Token()
-	if err != nil {
-		return err
-	}
-	delimiter, ok := tok.(json.Delim)
-	if !ok || delimiter != '{' {
-		return fmt.Errorf("categories: expected '{'")
-	}
-
-	for dec.More() {
-		if _, err := dec.Token(); err != nil {
-			return err
-		}
-
-		tok, err := dec.Token()
-		if err != nil {
-			return err
-		}
-		delimiter, ok := tok.(json.Delim)
-		if !ok || delimiter != '{' {
-			return fmt.Errorf("categories: expected category object")
-		}
-
-		for dec.More() {
-			fieldToken, err := dec.Token()
-			if err != nil {
-				return err
-			}
-			field, _ := fieldToken.(string)
-			if field == "scenarios" {
-				if err := parseProgressScenarios(dec, definitions); err != nil {
-					return err
-				}
-				continue
-			}
-
-			var discard any
-			if err := dec.Decode(&discard); err != nil {
-				return err
-			}
-		}
-
-		if _, err := dec.Token(); err != nil {
-			return err
-		}
-	}
-
-	_, err = dec.Token()
-	return err
-}
-
-func parseProgressScenarios(dec *json.Decoder, definitions *[]progressScenarioDefinition) error {
-	tok, err := dec.Token()
-	if err != nil {
-		return err
-	}
-	delimiter, ok := tok.(json.Delim)
-	if !ok || delimiter != '{' {
-		return fmt.Errorf("scenarios: expected '{'")
-	}
-
-	for dec.More() {
-		nameToken, err := dec.Token()
-		if err != nil {
-			return err
-		}
-		name, _ := nameToken.(string)
-		name = strings.TrimSpace(name)
-
-		var scenarioPayload json.RawMessage
-		if err := dec.Decode(&scenarioPayload); err != nil {
-			return err
-		}
-
-		if name == "" {
-			continue
-		}
-
-		rankThresholds, err := extractRankThresholds(scenarioPayload)
-		if err != nil {
-			return fmt.Errorf("parse rank thresholds for %q: %w", name, err)
-		}
-
-		*definitions = append(*definitions, progressScenarioDefinition{
-			Name:           name,
-			RankThresholds: rankThresholds,
-		})
-	}
-
-	_, err = dec.Token()
-	return err
-}
-
-func extractRankThresholds(rawScenario json.RawMessage) ([]float64, error) {
-	if len(rawScenario) == 0 {
-		return nil, nil
-	}
-
-	var payload map[string]json.RawMessage
-	if err := json.Unmarshal(rawScenario, &payload); err != nil {
-		return nil, err
-	}
-
-	rawRankMaxes, ok := payload["rank_maxes"]
-	if !ok || len(rawRankMaxes) == 0 {
-		return nil, nil
-	}
-
-	dec := json.NewDecoder(bytes.NewReader(rawRankMaxes))
-	dec.UseNumber()
-
-	var rawAny any
-	if err := dec.Decode(&rawAny); err != nil {
-		return nil, err
-	}
-
-	return normalizeThresholdsFromAny(rawAny), nil
-}
-
-func normalizeThresholdsFromAny(raw any) []float64 {
-	out := make([]float64, 0)
-
-	appendValue := func(value float64) {
-		if value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) {
-			return
-		}
-		out = append(out, value)
-	}
-
-	switch typed := raw.(type) {
-	case []any:
-		for _, entry := range typed {
-			if value, ok := coerceThresholdValue(entry); ok {
-				appendValue(value)
-			}
-		}
-	default:
-		if value, ok := coerceThresholdValue(typed); ok {
-			appendValue(value)
-		}
-	}
-
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-func coerceThresholdValue(raw any) (float64, bool) {
-	switch typed := raw.(type) {
-	case float64:
-		return typed, true
-	case json.Number:
-		value, err := typed.Float64()
-		if err != nil {
-			return 0, false
-		}
-		return value, true
-	case string:
-		trimmed := strings.TrimSpace(typed)
-		if trimmed == "" {
-			return 0, false
-		}
-		value, err := strconv.ParseFloat(trimmed, 64)
-		if err != nil {
-			return 0, false
-		}
-		return value, true
-	default:
-		return 0, false
-	}
+	return scenarios, nil
 }
 
 func randomSteamID17() (string, error) {
@@ -786,90 +569,6 @@ func randomSteamID17() (string, error) {
 
 	value := new(big.Int).Add(randomOffset, big.NewInt(minSteamID))
 	return value.String(), nil
-}
-
-func applyProgressScenariosToDifficulty(difficulty sourceDifficulty, progressScenarios []progressScenarioDefinition) []mergedScenario {
-	out := make([]mergedScenario, 0, len(progressScenarios))
-	appendScenario := func(def progressScenarioDefinition, categoryName, subcategoryName string) {
-		thresholds := make([]float64, len(def.RankThresholds))
-		copy(thresholds, def.RankThresholds)
-
-		out = append(out, mergedScenario{
-			Name:            strings.TrimSpace(def.Name),
-			CategoryName:    strings.TrimSpace(categoryName),
-			SubcategoryName: strings.TrimSpace(subcategoryName),
-			SortOrder:       len(out),
-			RankThresholds:  thresholds,
-		})
-	}
-
-	if len(difficulty.Categories) == 0 {
-		for _, def := range progressScenarios {
-			appendScenario(def, "", "")
-		}
-		return out
-	}
-
-	position := 0
-	for _, category := range difficulty.Categories {
-		for _, subcategory := range category.Subcategories {
-			take := subcategory.ScenarioCount
-			if take < 0 {
-				take = 0
-			}
-
-			end := position + take
-			if end > len(progressScenarios) {
-				end = len(progressScenarios)
-			}
-
-			for _, def := range progressScenarios[position:end] {
-				appendScenario(def, category.CategoryName, subcategory.SubcategoryName)
-			}
-
-			position = end
-		}
-	}
-
-	if position < len(progressScenarios) {
-		lastCategory := difficulty.Categories[len(difficulty.Categories)-1]
-		for _, def := range progressScenarios[position:] {
-			// Mirrors the app grouping fallback: leftover scenarios become an unnamed group in the final category.
-			appendScenario(def, lastCategory.CategoryName, "")
-		}
-	}
-
-	return out
-}
-
-func collectScenarioLinks(difficulty sourceDifficulty) []difficultyScenarioLink {
-	out := make([]difficultyScenarioLink, 0, len(difficulty.MergedScenarios))
-	seen := make(map[string]struct{})
-
-	for _, merged := range difficulty.MergedScenarios {
-		name := strings.TrimSpace(merged.Name)
-		if name == "" {
-			continue
-		}
-		key := strings.ToLower(name)
-		if _, exists := seen[key]; exists {
-			continue
-		}
-		seen[key] = struct{}{}
-
-		rankThresholds := make([]float64, len(merged.RankThresholds))
-		copy(rankThresholds, merged.RankThresholds)
-
-		out = append(out, difficultyScenarioLink{
-			Name:            name,
-			CategoryName:    strings.TrimSpace(merged.CategoryName),
-			SubcategoryName: strings.TrimSpace(merged.SubcategoryName),
-			SortOrder:       len(out),
-			RankThresholds:  rankThresholds,
-		})
-	}
-
-	return out
 }
 
 func ensureScenario(ctx context.Context, tx pgx.Tx, scenarioName string) (int64, error) {
