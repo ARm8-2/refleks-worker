@@ -94,7 +94,6 @@ type rawRunParquetRow struct {
 	EnvOS                       string  `parquet:"env_os"`
 	EnvArch                     string  `parquet:"env_arch"`
 	EnvOSVersion                string  `parquet:"env_os_version"`
-	EnvHostname                 string  `parquet:"env_hostname"`
 	EnvCPUName                  string  `parquet:"env_cpu_name"`
 	EnvCPUCores                 int32   `parquet:"env_cpu_cores"`
 	EnvGPUName                  string  `parquet:"env_gpu_name"`
@@ -602,7 +601,6 @@ func buildRunRow(sourceBucket string, object r2.ObjectInfo, parsed refleks.File,
 		EnvOS:                       parsed.Env.OS,
 		EnvArch:                     parsed.Env.Arch,
 		EnvOSVersion:                parsed.Env.OSVersion,
-		EnvHostname:                 parsed.Env.Hostname,
 		EnvCPUName:                  parsed.Env.CPUName,
 		EnvCPUCores:                 parsed.Env.CPUCores,
 		EnvGPUName:                  parsed.Env.GPUName,

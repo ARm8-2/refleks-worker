@@ -252,8 +252,16 @@ func (s *Service) syncToDatabase(ctx context.Context, benchmarks []sourceBenchma
 	}
 	defer tx.Rollback(ctx)
 
-	if _, err := tx.Exec(ctx, `UPDATE benchmarks SET is_active = FALSE, updated_at = NOW()`); err != nil {
-		return syncSummary{}, fmt.Errorf("mark benchmarks inactive: %w", err)
+	benchmarkNames := make([]string, 0, len(benchmarks))
+	for i := range benchmarks {
+		benchmarkNames = append(benchmarkNames, benchmarks[i].BenchmarkName)
+	}
+
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM benchmarks
+		WHERE NOT (benchmark_name = ANY($1::text[]))
+	`, benchmarkNames); err != nil {
+		return syncSummary{}, fmt.Errorf("delete removed benchmarks: %w", err)
 	}
 
 	summary := syncSummary{}
@@ -276,10 +284,9 @@ func (s *Service) syncToDatabase(ctx context.Context, benchmarks []sourceBenchma
 				date_added,
 				source_file,
 				source_hash,
-				is_active,
 				updated_at
 			)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE,NOW())
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())
 			ON CONFLICT (benchmark_name) DO UPDATE SET
 				abbreviation = EXCLUDED.abbreviation,
 				rank_calculation = EXCLUDED.rank_calculation,
@@ -288,7 +295,6 @@ func (s *Service) syncToDatabase(ctx context.Context, benchmarks []sourceBenchma
 				date_added = EXCLUDED.date_added,
 				source_file = EXCLUDED.source_file,
 				source_hash = EXCLUDED.source_hash,
-				is_active = TRUE,
 				updated_at = NOW()
 			RETURNING id
 		`,
@@ -435,15 +441,6 @@ func (s *Service) syncToDatabase(ctx context.Context, benchmarks []sourceBenchma
 		}
 	}
 
-	if _, err := tx.Exec(ctx, `
-		DELETE FROM benchmark_difficulties
-		WHERE benchmark_id IN (
-			SELECT id FROM benchmarks WHERE is_active = FALSE
-		)
-	`); err != nil {
-		return syncSummary{}, fmt.Errorf("cleanup inactive benchmark hierarchy: %w", err)
-	}
-
 	if err := tx.Commit(ctx); err != nil {
 		return syncSummary{}, fmt.Errorf("commit benchmark sync: %w", err)
 	}
@@ -533,11 +530,18 @@ func ensureScenario(ctx context.Context, tx pgx.Tx, scenarioName string) (int64,
 
 	var id int64
 	err := tx.QueryRow(ctx, `
-		INSERT INTO scenarios (scenario_name, updated_at)
-		VALUES ($1, NOW())
-		ON CONFLICT (scenario_name) DO UPDATE
-		SET updated_at = NOW()
-		RETURNING id
+		WITH inserted AS (
+			INSERT INTO scenarios (scenario_name)
+			VALUES ($1)
+			ON CONFLICT (scenario_name) DO NOTHING
+			RETURNING id
+		)
+		SELECT id FROM inserted
+		UNION ALL
+		SELECT s.id
+		FROM scenarios s
+		WHERE s.scenario_name = $1
+		LIMIT 1
 	`, scenarioName).Scan(&id)
 	if err != nil {
 		return 0, err

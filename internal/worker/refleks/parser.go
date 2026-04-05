@@ -47,7 +47,6 @@ type Environment struct {
 	OS          string
 	Arch        string
 	OSVersion   string
-	Hostname    string
 	SteamID     string
 	PersonaName string
 
@@ -307,10 +306,6 @@ func readEnvironment(r io.Reader) (Environment, error) {
 	if err != nil {
 		return Environment{}, err
 	}
-	hostname, err := readString(r, maxStringBytes)
-	if err != nil {
-		return Environment{}, err
-	}
 	steamID, err := readString(r, maxStringBytes)
 	if err != nil {
 		return Environment{}, err
@@ -393,7 +388,6 @@ func readEnvironment(r io.Reader) (Environment, error) {
 		OS:            osName,
 		Arch:          arch,
 		OSVersion:     osVersion,
-		Hostname:      hostname,
 		SteamID:       steamID,
 		PersonaName:   personaName,
 		CPUName:       cpuName,

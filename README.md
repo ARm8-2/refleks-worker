@@ -20,23 +20,26 @@ The worker is designed to run as a separate container on the same server as the 
 6. `internal/worker/state`: job run tracking and state persistence.
 7. `internal/worker/jobs/benchmarksync`: JSON file fingerprinting + benchmark upsert logic.
 8. `internal/worker/jobs/leaderboard`: scenario and benchmark leaderboard refresh job.
-9. `internal/worker/refleks`: `.refleks` binary parser used by parquet export.
-10. `internal/worker/jobs/parquetexport`: raw-bucket parquet generation and upload job.
-11. `internal/worker/scheduler`: gocron wiring.
+9. `internal/worker/jobs/scenariostats`: cached scenario score and sensitivity distribution refresh job.
+10. `internal/worker/refleks`: `.refleks` binary parser used by parquet export.
+11. `internal/worker/jobs/parquetexport`: raw-bucket parquet generation and upload job.
+12. `internal/worker/scheduler`: gocron wiring.
 
 ## Scheduling model
 
 Jobs are scheduled internally with gocron, not host-level cron.
 
 1. `BENCHMARK_SYNC_CRON`: checks benchmark file for changes and syncs if hash changed.
-2. `LEADERBOARD_CRON`: rebuilds current leaderboard tables.
-3. `PARQUET_CRON`: reads raw files from the public bucket and writes parquet snapshots to the lab bucket.
+2. `SCENARIO_STATS_CRON`: rebuilds cached scenario distributions for `score` and `sens_cm360`.
+3. `LEADERBOARD_CRON`: rebuilds current leaderboard tables.
+4. `PARQUET_CRON`: reads raw files from the public bucket and writes parquet snapshots to the lab bucket.
 
 If `WORKER_RUN_ON_STARTUP=true`, all jobs also run once on container startup in this order:
 
 1. benchmark sync
-2. leaderboard refresh
-3. parquet export
+2. scenario stats refresh
+3. leaderboard refresh
+4. parquet export
 
 ## Database tables managed by worker
 
@@ -58,7 +61,8 @@ Notes:
 
 1. One scenario can map to multiple benchmark difficulties through `benchmark_difficulty_scenarios`.
 2. Benchmark source sync is hash-based and idempotent.
-3. Jobs are execution-tracked in `worker_job_runs` with status and details JSON.
+3. Scenario rows cache percentile-clipped histogram summaries for `score` and `sens_cm360`, so the API can render charts without rescanning `runs`, and `updated_at` reflects the last real scenario-row change.
+4. Jobs are execution-tracked in `worker_job_runs` with status and details JSON.
 
 ## Benchmark sync source file
 

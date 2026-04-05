@@ -31,9 +31,10 @@ func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
 		`CREATE TABLE IF NOT EXISTS scenarios (
 			id BIGSERIAL PRIMARY KEY,
 			scenario_name TEXT NOT NULL UNIQUE,
-			median_score DOUBLE PRECISION,
-			stddev_score DOUBLE PRECISION,
-			p95_score DOUBLE PRECISION,
+			score_sample_count BIGINT NOT NULL DEFAULT 0,
+			score_distribution JSONB NOT NULL DEFAULT '{}'::jsonb,
+			sens_sample_count BIGINT NOT NULL DEFAULT 0,
+			sens_distribution JSONB NOT NULL DEFAULT '{}'::jsonb,
 			run_count BIGINT NOT NULL DEFAULT 0,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -66,8 +67,6 @@ func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
 		`CREATE INDEX IF NOT EXISTS idx_runs_epoch ON runs (epoch_milli DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_runs_scenario_id ON runs (scenario_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_runs_account_id ON runs (account_id)`,
-		`ALTER TABLE runs ADD COLUMN IF NOT EXISTS format_version SMALLINT NOT NULL DEFAULT 1`,
-		`ALTER TABLE runs DROP COLUMN IF EXISTS compression`,
 
 		`CREATE TABLE IF NOT EXISTS worker_job_runs (
 			id BIGSERIAL PRIMARY KEY,
@@ -101,11 +100,9 @@ func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
 			date_added DATE,
 			source_file TEXT NOT NULL DEFAULT '',
 			source_hash CHAR(64) NOT NULL DEFAULT '',
-			is_active BOOLEAN NOT NULL DEFAULT TRUE,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
-		`CREATE INDEX IF NOT EXISTS idx_benchmarks_active_name ON benchmarks (is_active, benchmark_name)`,
 
 		`CREATE TABLE IF NOT EXISTS benchmark_difficulties (
 			id BIGSERIAL PRIMARY KEY,
