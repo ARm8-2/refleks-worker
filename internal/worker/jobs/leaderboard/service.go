@@ -91,7 +91,7 @@ const refreshBenchmarkLeaderboardSQL = `
 		SELECT
 			bds.difficulty_id,
 			pab.account_id,
-			SUM(pab.best_score * bds.weight) AS composite_score,
+			SUM(pab.best_score) AS composite_score,
 			COUNT(*) AS matched_scenarios,
 			MAX(pab.best_epoch_milli) AS last_epoch_milli
 		FROM benchmark_difficulty_scenarios bds

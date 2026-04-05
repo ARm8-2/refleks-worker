@@ -31,9 +31,10 @@ func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
 		`CREATE TABLE IF NOT EXISTS scenarios (
 			id BIGSERIAL PRIMARY KEY,
 			scenario_name TEXT NOT NULL UNIQUE,
-			median_score DOUBLE PRECISION,
-			stddev_score DOUBLE PRECISION,
-			p95_score DOUBLE PRECISION,
+			score_sample_count BIGINT NOT NULL DEFAULT 0,
+			score_distribution JSONB NOT NULL DEFAULT '{}'::jsonb,
+			sens_sample_count BIGINT NOT NULL DEFAULT 0,
+			sens_distribution JSONB NOT NULL DEFAULT '{}'::jsonb,
 			run_count BIGINT NOT NULL DEFAULT 0,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -66,8 +67,6 @@ func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
 		`CREATE INDEX IF NOT EXISTS idx_runs_epoch ON runs (epoch_milli DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_runs_scenario_id ON runs (scenario_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_runs_account_id ON runs (account_id)`,
-		`ALTER TABLE runs ADD COLUMN IF NOT EXISTS format_version SMALLINT NOT NULL DEFAULT 1`,
-		`ALTER TABLE runs DROP COLUMN IF EXISTS compression`,
 
 		`CREATE TABLE IF NOT EXISTS worker_job_runs (
 			id BIGSERIAL PRIMARY KEY,
@@ -101,11 +100,9 @@ func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
 			date_added DATE,
 			source_file TEXT NOT NULL DEFAULT '',
 			source_hash CHAR(64) NOT NULL DEFAULT '',
-			is_active BOOLEAN NOT NULL DEFAULT TRUE,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
-		`CREATE INDEX IF NOT EXISTS idx_benchmarks_active_name ON benchmarks (is_active, benchmark_name)`,
 
 		`CREATE TABLE IF NOT EXISTS benchmark_difficulties (
 			id BIGSERIAL PRIMARY KEY,
@@ -113,13 +110,23 @@ func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
 			difficulty_name TEXT NOT NULL,
 			kovaaks_benchmark_id BIGINT NOT NULL UNIQUE,
 			sharecode TEXT NOT NULL DEFAULT '',
-			rank_colors JSONB NOT NULL DEFAULT '{}'::jsonb,
 			sort_order INT NOT NULL DEFAULT 0,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			UNIQUE (benchmark_id, difficulty_name)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_benchmark_difficulties_benchmark_order ON benchmark_difficulties (benchmark_id, sort_order)`,
+
+		`CREATE TABLE IF NOT EXISTS benchmark_difficulty_ranks (
+			difficulty_id BIGINT NOT NULL REFERENCES benchmark_difficulties(id) ON DELETE CASCADE,
+			rank_name TEXT NOT NULL,
+			rank_color TEXT NOT NULL DEFAULT '',
+			sort_order INT NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (difficulty_id, sort_order)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_benchmark_difficulty_ranks_difficulty ON benchmark_difficulty_ranks (difficulty_id, sort_order)`,
 
 		`CREATE TABLE IF NOT EXISTS benchmark_categories (
 			id BIGSERIAL PRIMARY KEY,
@@ -128,10 +135,10 @@ func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
 			color TEXT NOT NULL DEFAULT '',
 			sort_order INT NOT NULL DEFAULT 0,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			UNIQUE (difficulty_id, category_name)
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_benchmark_categories_difficulty_order ON benchmark_categories (difficulty_id, sort_order)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_benchmark_categories_difficulty_sort_unique ON benchmark_categories (difficulty_id, sort_order)`,
 
 		`CREATE TABLE IF NOT EXISTS benchmark_subcategories (
 			id BIGSERIAL PRIMARY KEY,
@@ -141,17 +148,17 @@ func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
 			color TEXT NOT NULL DEFAULT '',
 			sort_order INT NOT NULL DEFAULT 0,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			UNIQUE (category_id, subcategory_name)
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_benchmark_subcategories_category_order ON benchmark_subcategories (category_id, sort_order)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_benchmark_subcategories_category_sort_unique ON benchmark_subcategories (category_id, sort_order)`,
 
 		`CREATE TABLE IF NOT EXISTS benchmark_difficulty_scenarios (
 			difficulty_id BIGINT NOT NULL REFERENCES benchmark_difficulties(id) ON DELETE CASCADE,
 			scenario_id BIGINT NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
 			category_name TEXT NOT NULL DEFAULT '',
 			subcategory_name TEXT NOT NULL DEFAULT '',
-			weight DOUBLE PRECISION NOT NULL DEFAULT 1,
+			rank_thresholds JSONB NOT NULL DEFAULT '[]'::jsonb,
 			sort_order INT NOT NULL DEFAULT 0,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

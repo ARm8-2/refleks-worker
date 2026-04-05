@@ -17,6 +17,7 @@ import (
 	"refleks-worker/internal/worker/jobs/benchmarksync"
 	"refleks-worker/internal/worker/jobs/leaderboard"
 	"refleks-worker/internal/worker/jobs/parquetexport"
+	"refleks-worker/internal/worker/jobs/scenariostats"
 	"refleks-worker/internal/worker/scheduler"
 	"refleks-worker/internal/worker/schema"
 	"refleks-worker/internal/worker/state"
@@ -97,6 +98,11 @@ func run() error {
 		return fmt.Errorf("init leaderboard job: %w", err)
 	}
 
+	scenarioStatsJob, err := scenariostats.NewService(dbClient.Pool())
+	if err != nil {
+		return fmt.Errorf("init scenario stats job: %w", err)
+	}
+
 	parquetJob, err := parquetexport.NewService(logger, dbClient.Pool(), r2Store, rawSourceStore, parquetexport.Config{
 		R2Prefix:            cfg.ParquetR2Prefix,
 		SourcePrefix:        cfg.ParquetSourcePrefix,
@@ -121,11 +127,14 @@ func run() error {
 	if err := schedulerSvc.RegisterCron(leaderboardJob, cfg.LeaderboardCron); err != nil {
 		return err
 	}
+	if err := schedulerSvc.RegisterCron(scenarioStatsJob, cfg.ScenarioStatsCron); err != nil {
+		return err
+	}
 	if err := schedulerSvc.RegisterCron(parquetJob, cfg.ParquetCron); err != nil {
 		return err
 	}
 
-	jobs := []worker.Job{benchmarkSyncJob, leaderboardJob, parquetJob}
+	jobs := []worker.Job{benchmarkSyncJob, scenarioStatsJob, leaderboardJob, parquetJob}
 
 	runCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -149,6 +158,7 @@ func run() error {
 		slog.String("version", cfg.Version),
 		slog.String("timezone", cfg.Timezone.String()),
 		slog.String("benchmark_sync_cron", cfg.BenchmarkSyncCron),
+		slog.String("scenario_stats_cron", cfg.ScenarioStatsCron),
 		slog.String("leaderboard_cron", cfg.LeaderboardCron),
 		slog.String("parquet_cron", cfg.ParquetCron),
 	)

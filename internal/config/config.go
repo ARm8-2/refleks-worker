@@ -18,6 +18,7 @@ const (
 	defaultJobTimeout                 = 45 * time.Minute
 	defaultRunOnStartup               = true
 	defaultLeaderboardCron            = "0 4 * * *"
+	defaultScenarioStatsCron          = "0 */12 * * *"
 	defaultParquetCron                = "30 4 * * *"
 	defaultBenchmarkSyncCron          = "*/10 * * * *"
 	defaultLeaderboardMaxRank         = 1000
@@ -61,6 +62,7 @@ type Config struct {
 	ParquetSourceListPage      int32
 
 	LeaderboardCron   string
+	ScenarioStatsCron string
 	ParquetCron       string
 	BenchmarkSyncCron string
 
@@ -198,6 +200,7 @@ func Load(version string) (Config, error) {
 		ParquetSourceListPage:      int32(parquetSourceListPage),
 
 		LeaderboardCron:   strings.TrimSpace(envOrDefault("LEADERBOARD_CRON", defaultLeaderboardCron)),
+		ScenarioStatsCron: strings.TrimSpace(envOrDefault("SCENARIO_STATS_CRON", defaultScenarioStatsCron)),
 		ParquetCron:       strings.TrimSpace(envOrDefault("PARQUET_CRON", defaultParquetCron)),
 		BenchmarkSyncCron: strings.TrimSpace(envOrDefault("BENCHMARK_SYNC_CRON", defaultBenchmarkSyncCron)),
 
@@ -213,6 +216,9 @@ func Load(version string) (Config, error) {
 	}
 	if cfg.LeaderboardCron == "" {
 		return Config{}, fmt.Errorf("LEADERBOARD_CRON must not be empty")
+	}
+	if cfg.ScenarioStatsCron == "" {
+		return Config{}, fmt.Errorf("SCENARIO_STATS_CRON must not be empty")
 	}
 	if cfg.ParquetCron == "" {
 		return Config{}, fmt.Errorf("PARQUET_CRON must not be empty")
