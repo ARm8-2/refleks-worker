@@ -73,7 +73,7 @@ By default the worker reads:
 
 Use a bind mount or volume so uploaded benchmark JSON is visible in the worker container.
 
-Current reference benchmark JSON format is fully supported. Optional future scenario linking is supported via optional `scenarios` or `scenarioNames` fields when present.
+The worker now enriches benchmark definitions with ordered scenario names and per-scenario rank thresholds from the Kovaaks progress endpoint (using a random 17-digit Steam ID), so scenario links are fully populated from the same source shape used by the app reference `benchmarks_data.json`.
 
 ## Parquet source and output
 

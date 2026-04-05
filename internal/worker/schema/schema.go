@@ -125,10 +125,10 @@ func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
 			color TEXT NOT NULL DEFAULT '',
 			sort_order INT NOT NULL DEFAULT 0,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			UNIQUE (difficulty_id, category_name)
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_benchmark_categories_difficulty_order ON benchmark_categories (difficulty_id, sort_order)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_benchmark_categories_difficulty_sort_unique ON benchmark_categories (difficulty_id, sort_order)`,
 
 		`CREATE TABLE IF NOT EXISTS benchmark_subcategories (
 			id BIGSERIAL PRIMARY KEY,
@@ -138,17 +138,17 @@ func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
 			color TEXT NOT NULL DEFAULT '',
 			sort_order INT NOT NULL DEFAULT 0,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			UNIQUE (category_id, subcategory_name)
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_benchmark_subcategories_category_order ON benchmark_subcategories (category_id, sort_order)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_benchmark_subcategories_category_sort_unique ON benchmark_subcategories (category_id, sort_order)`,
 
 		`CREATE TABLE IF NOT EXISTS benchmark_difficulty_scenarios (
 			difficulty_id BIGINT NOT NULL REFERENCES benchmark_difficulties(id) ON DELETE CASCADE,
 			scenario_id BIGINT NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
 			category_name TEXT NOT NULL DEFAULT '',
 			subcategory_name TEXT NOT NULL DEFAULT '',
-			weight DOUBLE PRECISION NOT NULL DEFAULT 1,
+			rank_thresholds JSONB NOT NULL DEFAULT '[]'::jsonb,
 			sort_order INT NOT NULL DEFAULT 0,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
