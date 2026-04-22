@@ -34,6 +34,7 @@ const (
 	defaultParquetSourceListPage      = 1000
 	defaultBenchmarkSyncSourceDir     = "/data/benchmarks"
 	defaultBenchmarkSyncSourceFile    = "benchmarks_data.json"
+	defaultConfigSyncCron             = "*/2 * * * *"
 )
 
 // Config contains worker runtime settings.
@@ -71,6 +72,8 @@ type Config struct {
 
 	BenchmarkSyncSourceDir  string
 	BenchmarkSyncSourceFile string
+
+	ConfigSyncCron string
 }
 
 // Load reads environment variables into Config.
@@ -209,6 +212,8 @@ func Load(version string) (Config, error) {
 
 		BenchmarkSyncSourceDir:  strings.TrimSpace(envOrDefault("BENCHMARK_SYNC_SOURCE_DIR", defaultBenchmarkSyncSourceDir)),
 		BenchmarkSyncSourceFile: strings.TrimSpace(envOrDefault("BENCHMARK_SYNC_SOURCE_FILE", defaultBenchmarkSyncSourceFile)),
+
+		ConfigSyncCron: strings.TrimSpace(envOrDefault("CONFIG_SYNC_CRON", defaultConfigSyncCron)),
 	}
 
 	if cfg.ParquetR2Prefix == "" {
@@ -228,6 +233,9 @@ func Load(version string) (Config, error) {
 	}
 	if cfg.BenchmarkSyncSourceFile == "" {
 		return Config{}, fmt.Errorf("BENCHMARK_SYNC_SOURCE_FILE must not be empty")
+	}
+	if cfg.ConfigSyncCron == "" {
+		return Config{}, fmt.Errorf("CONFIG_SYNC_CRON must not be empty")
 	}
 	if cfg.BenchmarkSyncSourceDir == "" && !filepath.IsAbs(cfg.BenchmarkSyncSourceFile) {
 		return Config{}, fmt.Errorf("BENCHMARK_SYNC_SOURCE_DIR must not be empty when BENCHMARK_SYNC_SOURCE_FILE is relative")

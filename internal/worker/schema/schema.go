@@ -190,6 +190,12 @@ func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_benchmark_difficulty_leaderboard_rank ON benchmark_difficulty_leaderboard_current (difficulty_id, rank)`,
 		`CREATE INDEX IF NOT EXISTS idx_benchmark_difficulty_leaderboard_account ON benchmark_difficulty_leaderboard_current (account_id)`,
+		`CREATE TABLE IF NOT EXISTS worker_job_config (
+			job_name TEXT PRIMARY KEY,
+			cron_expr TEXT NOT NULL,
+			enabled BOOLEAN NOT NULL DEFAULT true,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
 	}
 
 	for _, statement := range statements {
