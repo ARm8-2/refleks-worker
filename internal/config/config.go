@@ -11,30 +11,19 @@ import (
 )
 
 const (
-	defaultAppName                    = "refleks-worker"
-	defaultEnv                        = "development"
-	defaultLogLevel                   = "info"
-	defaultTimezone                   = "UTC"
-	defaultJobTimeout                 = 45 * time.Minute
-	defaultRunOnStartup               = true
-	defaultLeaderboardCron            = "0 4 * * *"
-	defaultScenarioStatsCron          = "0 */12 * * *"
-	defaultParquetCron                = "30 4 * * *"
-	defaultBenchmarkSyncCron          = "*/10 * * * *"
-	defaultLeaderboardMaxRank         = 1000
-	defaultParquetRunsLookbackDays    = 1
-	defaultR2Region                   = "auto"
-	defaultR2LabPrivateBucket         = "refleks-lab-private"
-	defaultR2RawPublicBucket          = "refleks-raw-public"
-	defaultParquetR2Prefix            = "lab/parquet"
-	defaultParquetSourcePrefix        = ""
-	defaultParquetTraceSamplePoints   = 64
-	defaultParquetMaxSegmentsPerRun   = 256
-	defaultParquetSameSpotThresholdPx = 120
-	defaultParquetSourceListPage      = 1000
-	defaultBenchmarkSyncSourceDir     = "/data/benchmarks"
-	defaultBenchmarkSyncSourceFile    = "benchmarks_data.json"
-	defaultConfigSyncCron             = "*/2 * * * *"
+	defaultAppName                 = "refleks-worker"
+	defaultEnv                     = "development"
+	defaultLogLevel                = "info"
+	defaultTimezone                = "UTC"
+	defaultJobTimeout              = 45 * time.Minute
+	defaultRunOnStartup            = true
+	defaultLeaderboardCron         = "0 4 * * *"
+	defaultScenarioStatsCron       = "0 */12 * * *"
+	defaultBenchmarkSyncCron       = "*/10 * * * *"
+	defaultLeaderboardMaxRank      = 1000
+	defaultBenchmarkSyncSourceDir  = "/data/benchmarks"
+	defaultBenchmarkSyncSourceFile = "benchmarks_data.json"
+	defaultConfigSyncCron          = "*/2 * * * *"
 )
 
 // Config contains worker runtime settings.
@@ -49,26 +38,11 @@ type Config struct {
 
 	SupabaseDBURL string
 
-	R2Endpoint                 string
-	R2Region                   string
-	R2LabPrivateBucket         string
-	R2RawPublicBucket          string
-	R2AccessKeyID              string
-	R2SecretAccessKey          string
-	ParquetR2Prefix            string
-	ParquetSourcePrefix        string
-	ParquetTraceSamplePoints   int
-	ParquetMaxSegmentsPerRun   int
-	ParquetSameSpotThresholdPx int
-	ParquetSourceListPage      int32
-
 	LeaderboardCron   string
 	ScenarioStatsCron string
-	ParquetCron       string
 	BenchmarkSyncCron string
 
-	LeaderboardMaxRank      int
-	ParquetRunsLookbackDays int
+	LeaderboardMaxRank int
 
 	BenchmarkSyncSourceDir  string
 	BenchmarkSyncSourceFile string
@@ -104,46 +78,6 @@ func Load(version string) (Config, error) {
 		return Config{}, fmt.Errorf("LEADERBOARD_MAX_RANK must be greater than zero")
 	}
 
-	parquetRunsLookbackDays, err := envInt("PARQUET_RUNS_LOOKBACK_DAYS", defaultParquetRunsLookbackDays)
-	if err != nil {
-		return Config{}, err
-	}
-	if parquetRunsLookbackDays <= 0 {
-		return Config{}, fmt.Errorf("PARQUET_RUNS_LOOKBACK_DAYS must be greater than zero")
-	}
-
-	parquetTraceSamplePoints, err := envInt("PARQUET_TRACE_SAMPLE_POINTS", defaultParquetTraceSamplePoints)
-	if err != nil {
-		return Config{}, err
-	}
-	if parquetTraceSamplePoints <= 0 {
-		return Config{}, fmt.Errorf("PARQUET_TRACE_SAMPLE_POINTS must be greater than zero")
-	}
-
-	parquetMaxSegmentsPerRun, err := envInt("PARQUET_MAX_SEGMENTS_PER_RUN", defaultParquetMaxSegmentsPerRun)
-	if err != nil {
-		return Config{}, err
-	}
-	if parquetMaxSegmentsPerRun <= 0 {
-		return Config{}, fmt.Errorf("PARQUET_MAX_SEGMENTS_PER_RUN must be greater than zero")
-	}
-
-	parquetSameSpotThresholdPx, err := envInt("PARQUET_SAME_SPOT_THRESHOLD_PX", defaultParquetSameSpotThresholdPx)
-	if err != nil {
-		return Config{}, err
-	}
-	if parquetSameSpotThresholdPx <= 0 {
-		return Config{}, fmt.Errorf("PARQUET_SAME_SPOT_THRESHOLD_PX must be greater than zero")
-	}
-
-	parquetSourceListPage, err := envInt("PARQUET_SOURCE_LIST_PAGE", defaultParquetSourceListPage)
-	if err != nil {
-		return Config{}, err
-	}
-	if parquetSourceListPage <= 0 {
-		return Config{}, fmt.Errorf("PARQUET_SOURCE_LIST_PAGE must be greater than zero")
-	}
-
 	timezoneName := envOrDefault("WORKER_TIMEZONE", defaultTimezone)
 	location, err := time.LoadLocation(timezoneName)
 	if err != nil {
@@ -153,24 +87,6 @@ func Load(version string) (Config, error) {
 	supabaseDBURL := strings.TrimSpace(os.Getenv("SUPABASE_DB_URL"))
 	if supabaseDBURL == "" {
 		return Config{}, fmt.Errorf("SUPABASE_DB_URL is required")
-	}
-
-	r2Endpoint := strings.TrimSpace(os.Getenv("R2_ENDPOINT"))
-	r2AccessKeyID := strings.TrimSpace(os.Getenv("R2_ACCESS_KEY_ID"))
-	r2SecretAccessKey := strings.TrimSpace(os.Getenv("R2_SECRET_ACCESS_KEY"))
-	r2LabPrivateBucket := envOrDefault("R2_LAB_PRIVATE_BUCKET", defaultR2LabPrivateBucket)
-	r2RawPublicBucket := envOrDefault("R2_RAW_PUBLIC_BUCKET", defaultR2RawPublicBucket)
-	if r2Endpoint == "" {
-		return Config{}, fmt.Errorf("R2_ENDPOINT is required")
-	}
-	if r2AccessKeyID == "" || r2SecretAccessKey == "" {
-		return Config{}, fmt.Errorf("R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY are required")
-	}
-	if strings.TrimSpace(r2LabPrivateBucket) == "" {
-		return Config{}, fmt.Errorf("R2_LAB_PRIVATE_BUCKET is required")
-	}
-	if strings.TrimSpace(r2RawPublicBucket) == "" {
-		return Config{}, fmt.Errorf("R2_RAW_PUBLIC_BUCKET is required")
 	}
 
 	resolvedVersion := envOrDefault("APP_VERSION", version)
@@ -189,26 +105,11 @@ func Load(version string) (Config, error) {
 
 		SupabaseDBURL: supabaseDBURL,
 
-		R2Endpoint:                 r2Endpoint,
-		R2Region:                   envOrDefault("R2_REGION", defaultR2Region),
-		R2LabPrivateBucket:         strings.TrimSpace(r2LabPrivateBucket),
-		R2RawPublicBucket:          strings.TrimSpace(r2RawPublicBucket),
-		R2AccessKeyID:              r2AccessKeyID,
-		R2SecretAccessKey:          r2SecretAccessKey,
-		ParquetR2Prefix:            strings.Trim(strings.TrimSpace(envOrDefault("PARQUET_R2_PREFIX", defaultParquetR2Prefix)), "/"),
-		ParquetSourcePrefix:        strings.Trim(strings.TrimSpace(envOrDefault("PARQUET_SOURCE_PREFIX", defaultParquetSourcePrefix)), "/"),
-		ParquetTraceSamplePoints:   parquetTraceSamplePoints,
-		ParquetMaxSegmentsPerRun:   parquetMaxSegmentsPerRun,
-		ParquetSameSpotThresholdPx: parquetSameSpotThresholdPx,
-		ParquetSourceListPage:      int32(parquetSourceListPage),
-
 		LeaderboardCron:   strings.TrimSpace(envOrDefault("LEADERBOARD_CRON", defaultLeaderboardCron)),
 		ScenarioStatsCron: strings.TrimSpace(envOrDefault("SCENARIO_STATS_CRON", defaultScenarioStatsCron)),
-		ParquetCron:       strings.TrimSpace(envOrDefault("PARQUET_CRON", defaultParquetCron)),
 		BenchmarkSyncCron: strings.TrimSpace(envOrDefault("BENCHMARK_SYNC_CRON", defaultBenchmarkSyncCron)),
 
-		LeaderboardMaxRank:      leaderboardMaxRank,
-		ParquetRunsLookbackDays: parquetRunsLookbackDays,
+		LeaderboardMaxRank: leaderboardMaxRank,
 
 		BenchmarkSyncSourceDir:  strings.TrimSpace(envOrDefault("BENCHMARK_SYNC_SOURCE_DIR", defaultBenchmarkSyncSourceDir)),
 		BenchmarkSyncSourceFile: strings.TrimSpace(envOrDefault("BENCHMARK_SYNC_SOURCE_FILE", defaultBenchmarkSyncSourceFile)),
@@ -216,17 +117,11 @@ func Load(version string) (Config, error) {
 		ConfigSyncCron: strings.TrimSpace(envOrDefault("CONFIG_SYNC_CRON", defaultConfigSyncCron)),
 	}
 
-	if cfg.ParquetR2Prefix == "" {
-		return Config{}, fmt.Errorf("PARQUET_R2_PREFIX must not be empty")
-	}
 	if cfg.LeaderboardCron == "" {
 		return Config{}, fmt.Errorf("LEADERBOARD_CRON must not be empty")
 	}
 	if cfg.ScenarioStatsCron == "" {
 		return Config{}, fmt.Errorf("SCENARIO_STATS_CRON must not be empty")
-	}
-	if cfg.ParquetCron == "" {
-		return Config{}, fmt.Errorf("PARQUET_CRON must not be empty")
 	}
 	if cfg.BenchmarkSyncCron == "" {
 		return Config{}, fmt.Errorf("BENCHMARK_SYNC_CRON must not be empty")
