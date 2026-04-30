@@ -18,12 +18,12 @@ const (
 	defaultJobTimeout              = 45 * time.Minute
 	defaultRunOnStartup            = true
 	defaultLeaderboardCron         = "0 4 * * *"
-	defaultScenarioStatsCron       = "0 */12 * * *"
-	defaultBenchmarkSyncCron       = "*/10 * * * *"
+	defaultScenarioStatsCron       = "0 0 * * *"
+	defaultBenchmarkSyncCron       = "0 2 * * *"
 	defaultLeaderboardMaxRank      = 1000
 	defaultBenchmarkSyncSourceDir  = "/data/benchmarks"
 	defaultBenchmarkSyncSourceFile = "benchmarks_data.json"
-	defaultConfigSyncCron          = "*/2 * * * *"
+	defaultConfigSyncCron          = "*/10 * * * *"
 )
 
 // Config contains worker runtime settings.
