@@ -11,12 +11,11 @@ import (
 	_ "time/tzdata"
 
 	"refleks-worker/internal/config"
-	"refleks-worker/internal/r2"
 	"refleks-worker/internal/supabase"
 	"refleks-worker/internal/worker"
+	"refleks-worker/internal/worker/jobconfig"
 	"refleks-worker/internal/worker/jobs/benchmarksync"
 	"refleks-worker/internal/worker/jobs/leaderboard"
-	"refleks-worker/internal/worker/jobs/parquetexport"
 	"refleks-worker/internal/worker/jobs/scenariostats"
 	"refleks-worker/internal/worker/scheduler"
 	"refleks-worker/internal/worker/schema"
@@ -59,29 +58,8 @@ func run() error {
 	}
 	logger.Info("schema bootstrap complete")
 
-	r2Store, err := r2.NewStore(bootstrapCtx, r2.Config{
-		Endpoint:        cfg.R2Endpoint,
-		Region:          cfg.R2Region,
-		Bucket:          cfg.R2LabPrivateBucket,
-		AccessKeyID:     cfg.R2AccessKeyID,
-		SecretAccessKey: cfg.R2SecretAccessKey,
-	})
-	if err != nil {
-		return fmt.Errorf("init r2 store: %w", err)
-	}
-
-	rawSourceStore, err := r2.NewStore(bootstrapCtx, r2.Config{
-		Endpoint:        cfg.R2Endpoint,
-		Region:          cfg.R2Region,
-		Bucket:          cfg.R2RawPublicBucket,
-		AccessKeyID:     cfg.R2AccessKeyID,
-		SecretAccessKey: cfg.R2SecretAccessKey,
-	})
-	if err != nil {
-		return fmt.Errorf("init raw source r2 store: %w", err)
-	}
-
 	stateStore := state.NewStore(dbClient.Pool())
+	jobConfigStore := jobconfig.NewStore(dbClient.Pool())
 	runner := worker.NewRunner(logger, stateStore, cfg.JobTimeout)
 
 	benchmarkSyncJob, err := benchmarksync.NewService(logger, dbClient.Pool(), stateStore, benchmarksync.Config{
@@ -103,45 +81,48 @@ func run() error {
 		return fmt.Errorf("init scenario stats job: %w", err)
 	}
 
-	parquetJob, err := parquetexport.NewService(logger, dbClient.Pool(), r2Store, rawSourceStore, parquetexport.Config{
-		R2Prefix:            cfg.ParquetR2Prefix,
-		SourcePrefix:        cfg.ParquetSourcePrefix,
-		RunsLookbackDays:    cfg.ParquetRunsLookbackDays,
-		TraceSamplePoints:   cfg.ParquetTraceSamplePoints,
-		MaxSegmentsPerRun:   cfg.ParquetMaxSegmentsPerRun,
-		SameSpotThresholdPx: cfg.ParquetSameSpotThresholdPx,
-		SourceListPage:      cfg.ParquetSourceListPage,
-	})
-	if err != nil {
-		return fmt.Errorf("init parquet export job: %w", err)
-	}
-
-	schedulerSvc, err := scheduler.New(cfg.Timezone, logger, runner)
+	schedulerSvc, err := scheduler.New(cfg.Timezone, logger, runner, jobConfigStore, cfg.ConfigSyncCron)
 	if err != nil {
 		return fmt.Errorf("init scheduler: %w", err)
 	}
 
-	if err := schedulerSvc.RegisterCron(benchmarkSyncJob, cfg.BenchmarkSyncCron); err != nil {
-		return err
-	}
-	if err := schedulerSvc.RegisterCron(leaderboardJob, cfg.LeaderboardCron); err != nil {
-		return err
-	}
-	if err := schedulerSvc.RegisterCron(scenarioStatsJob, cfg.ScenarioStatsCron); err != nil {
-		return err
-	}
-	if err := schedulerSvc.RegisterCron(parquetJob, cfg.ParquetCron); err != nil {
-		return err
+	// Register all job implementations as available.
+	schedulerSvc.AddJob(benchmarkSyncJob)
+	schedulerSvc.AddJob(leaderboardJob)
+	schedulerSvc.AddJob(scenarioStatsJob)
+
+	// Seed default configs into the DB (no-op for existing rows).
+	if err := jobConfigStore.Seed(bootstrapCtx, []jobconfig.JobConfig{
+		{JobName: benchmarkSyncJob.Name(), CronExpr: cfg.BenchmarkSyncCron, Enabled: true},
+		{JobName: leaderboardJob.Name(), CronExpr: cfg.LeaderboardCron, Enabled: true},
+		{JobName: scenarioStatsJob.Name(), CronExpr: cfg.ScenarioStatsCron, Enabled: true},
+	}); err != nil {
+		return fmt.Errorf("seed job configs: %w", err)
 	}
 
-	jobs := []worker.Job{benchmarkSyncJob, scenarioStatsJob, leaderboardJob, parquetJob}
+	// Initial sync — schedule jobs according to DB state.
+	if err := schedulerSvc.Sync(bootstrapCtx); err != nil {
+		return fmt.Errorf("initial config sync: %w", err)
+	}
+
+	// Collect jobs that are currently enabled for potential startup run.
+	enabledSet := make(map[string]struct{})
+	for _, name := range schedulerSvc.EnabledJobs() {
+		enabledSet[name] = struct{}{}
+	}
+
+	allJobs := []worker.Job{benchmarkSyncJob, scenarioStatsJob, leaderboardJob}
 
 	runCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	if cfg.RunOnStartup {
 		logger.Info("running startup jobs")
-		for _, job := range jobs {
+		for _, job := range allJobs {
+			if _, ok := enabledSet[job.Name()]; !ok {
+				logger.Info("skipping disabled job on startup", slog.String("job", job.Name()))
+				continue
+			}
 			if err := schedulerSvc.RunNow(runCtx, job); err != nil {
 				logger.Error("startup job failed",
 					slog.String("job", job.Name()),
@@ -157,10 +138,7 @@ func run() error {
 		slog.String("environment", cfg.Environment),
 		slog.String("version", cfg.Version),
 		slog.String("timezone", cfg.Timezone.String()),
-		slog.String("benchmark_sync_cron", cfg.BenchmarkSyncCron),
-		slog.String("scenario_stats_cron", cfg.ScenarioStatsCron),
-		slog.String("leaderboard_cron", cfg.LeaderboardCron),
-		slog.String("parquet_cron", cfg.ParquetCron),
+		slog.String("config_sync_cron", cfg.ConfigSyncCron),
 	)
 
 	<-runCtx.Done()
