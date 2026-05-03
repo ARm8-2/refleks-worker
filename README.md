@@ -41,7 +41,7 @@ If `WORKER_RUN_ON_STARTUP=true`, all jobs also run once on container startup in 
 
 Worker bootstraps required tables idempotently at startup.
 
-1. Core shared tables (if missing): `accounts`, `scenarios`, `runs`.
+1. Core shared tables (if missing): `players`, `scenarios`, `runs`.
 2. Worker control tables: `worker_job_runs`, `worker_job_state`, `worker_job_config`.
 3. Benchmark tables:
 	- `benchmarks`

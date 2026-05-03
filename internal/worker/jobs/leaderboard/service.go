@@ -15,31 +15,31 @@ const jobName = "leaderboard_refresh"
 const refreshScenarioLeaderboardSQL = `
 	INSERT INTO scenario_leaderboard_current (
 		scenario_id,
-		account_id,
+		player_id,
 		rank,
 		best_score,
 		best_epoch_milli,
 		updated_at
 	)
-	WITH per_account_best AS (
-		SELECT DISTINCT ON (r.scenario_id, r.account_id)
+	WITH per_player_best AS (
+		SELECT DISTINCT ON (r.scenario_id, r.player_id)
 			r.scenario_id,
-			r.account_id,
+			r.player_id,
 			r.score AS best_score,
 			r.epoch_milli AS best_epoch_milli
 		FROM runs r
-		WHERE r.account_id IS NOT NULL
+		WHERE r.player_id IS NOT NULL
 			AND r.score IS NOT NULL
 		ORDER BY
 			r.scenario_id,
-			r.account_id,
+			r.player_id,
 			r.score DESC,
 			r.epoch_milli ASC,
 			r.id ASC
 	), ranked AS (
 		SELECT
 			p.scenario_id,
-			p.account_id,
+			p.player_id,
 			p.best_score,
 			p.best_epoch_milli,
 			ROW_NUMBER() OVER (
@@ -47,13 +47,13 @@ const refreshScenarioLeaderboardSQL = `
 				ORDER BY
 					p.best_score DESC,
 					p.best_epoch_milli ASC,
-					p.account_id ASC
+					p.player_id ASC
 			) AS rank
-		FROM per_account_best p
+		FROM per_player_best p
 	)
 	SELECT
 		r.scenario_id,
-		r.account_id,
+		r.player_id,
 		r.rank,
 		r.best_score,
 		r.best_epoch_milli,
@@ -65,42 +65,42 @@ const refreshScenarioLeaderboardSQL = `
 const refreshBenchmarkLeaderboardSQL = `
 	INSERT INTO benchmark_difficulty_leaderboard_current (
 		difficulty_id,
-		account_id,
+		player_id,
 		rank,
 		composite_score,
 		matched_scenarios,
 		last_epoch_milli,
 		updated_at
 	)
-	WITH per_account_best AS (
-		SELECT DISTINCT ON (r.scenario_id, r.account_id)
+	WITH per_player_best AS (
+		SELECT DISTINCT ON (r.scenario_id, r.player_id)
 			r.scenario_id,
-			r.account_id,
+			r.player_id,
 			r.score AS best_score,
 			r.epoch_milli AS best_epoch_milli
 		FROM runs r
-		WHERE r.account_id IS NOT NULL
+		WHERE r.player_id IS NOT NULL
 			AND r.score IS NOT NULL
 		ORDER BY
 			r.scenario_id,
-			r.account_id,
+			r.player_id,
 			r.score DESC,
 			r.epoch_milli ASC,
 			r.id ASC
 	), difficulty_scores AS (
 		SELECT
 			bds.difficulty_id,
-			pab.account_id,
-			SUM(pab.best_score) AS composite_score,
+			ppb.player_id,
+			SUM(ppb.best_score) AS composite_score,
 			COUNT(*) AS matched_scenarios,
-			MAX(pab.best_epoch_milli) AS last_epoch_milli
+			MAX(ppb.best_epoch_milli) AS last_epoch_milli
 		FROM benchmark_difficulty_scenarios bds
-		JOIN per_account_best pab ON pab.scenario_id = bds.scenario_id
-		GROUP BY bds.difficulty_id, pab.account_id
+		JOIN per_player_best ppb ON ppb.scenario_id = bds.scenario_id
+		GROUP BY bds.difficulty_id, ppb.player_id
 	), ranked AS (
 		SELECT
 			ds.difficulty_id,
-			ds.account_id,
+			ds.player_id,
 			ds.composite_score,
 			ds.matched_scenarios,
 			ds.last_epoch_milli,
@@ -109,13 +109,13 @@ const refreshBenchmarkLeaderboardSQL = `
 				ORDER BY
 					ds.composite_score DESC,
 					ds.last_epoch_milli ASC,
-					ds.account_id ASC
+					ds.player_id ASC
 			) AS rank
 		FROM difficulty_scores ds
 	)
 	SELECT
 		r.difficulty_id,
-		r.account_id,
+		r.player_id,
 		r.rank,
 		r.composite_score,
 		r.matched_scenarios,

@@ -21,7 +21,7 @@ func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
 	defer tx.Rollback(ctx)
 
 	statements := []string{
-		`CREATE TABLE IF NOT EXISTS accounts (
+		`CREATE TABLE IF NOT EXISTS players (
 			id BIGSERIAL PRIMARY KEY,
 			steam_id TEXT NOT NULL UNIQUE,
 			steam_username TEXT,
@@ -41,7 +41,7 @@ func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
 		)`,
 		`CREATE TABLE IF NOT EXISTS runs (
 			id BIGSERIAL PRIMARY KEY,
-			account_id BIGINT REFERENCES accounts(id) ON DELETE SET NULL,
+			player_id BIGINT REFERENCES players(id) ON DELETE SET NULL,
 			scenario_id BIGINT NOT NULL REFERENCES scenarios(id) ON DELETE RESTRICT,
 			hash CHAR(64) NOT NULL,
 			file_name TEXT NOT NULL,
@@ -66,7 +66,7 @@ func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
 		`CREATE INDEX IF NOT EXISTS idx_runs_uploaded_at ON runs (uploaded_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_runs_epoch ON runs (epoch_milli DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_runs_scenario_id ON runs (scenario_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_runs_account_id ON runs (account_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_runs_player_id ON runs (player_id)`,
 
 		`CREATE TABLE IF NOT EXISTS worker_job_runs (
 			id BIGSERIAL PRIMARY KEY,
@@ -168,28 +168,28 @@ func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
 
 		`CREATE TABLE IF NOT EXISTS scenario_leaderboard_current (
 			scenario_id BIGINT NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
-			account_id BIGINT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+			player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
 			rank INT NOT NULL,
 			best_score DOUBLE PRECISION NOT NULL,
 			best_epoch_milli BIGINT,
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			PRIMARY KEY (scenario_id, account_id)
+			PRIMARY KEY (scenario_id, player_id)
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_scenario_leaderboard_rank ON scenario_leaderboard_current (scenario_id, rank)`,
-		`CREATE INDEX IF NOT EXISTS idx_scenario_leaderboard_account ON scenario_leaderboard_current (account_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_scenario_leaderboard_player ON scenario_leaderboard_current (player_id)`,
 
 		`CREATE TABLE IF NOT EXISTS benchmark_difficulty_leaderboard_current (
 			difficulty_id BIGINT NOT NULL REFERENCES benchmark_difficulties(id) ON DELETE CASCADE,
-			account_id BIGINT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+			player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
 			rank INT NOT NULL,
 			composite_score DOUBLE PRECISION NOT NULL,
 			matched_scenarios INT NOT NULL,
 			last_epoch_milli BIGINT,
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			PRIMARY KEY (difficulty_id, account_id)
+			PRIMARY KEY (difficulty_id, player_id)
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_benchmark_difficulty_leaderboard_rank ON benchmark_difficulty_leaderboard_current (difficulty_id, rank)`,
-		`CREATE INDEX IF NOT EXISTS idx_benchmark_difficulty_leaderboard_account ON benchmark_difficulty_leaderboard_current (account_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_benchmark_difficulty_leaderboard_player ON benchmark_difficulty_leaderboard_current (player_id)`,
 		`CREATE TABLE IF NOT EXISTS worker_job_config (
 			job_name TEXT PRIMARY KEY,
 			cron_expr TEXT NOT NULL,
