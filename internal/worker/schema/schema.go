@@ -44,7 +44,6 @@ func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
 			account_id BIGINT REFERENCES accounts(id) ON DELETE SET NULL,
 			scenario_id BIGINT NOT NULL REFERENCES scenarios(id) ON DELETE RESTRICT,
 			hash CHAR(64) NOT NULL,
-			stats_hash CHAR(64) NOT NULL DEFAULT '',
 			file_name TEXT NOT NULL,
 			epoch_milli BIGINT NOT NULL,
 			size_bytes BIGINT NOT NULL,
@@ -68,7 +67,6 @@ func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
 		`CREATE INDEX IF NOT EXISTS idx_runs_epoch ON runs (epoch_milli DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_runs_scenario_id ON runs (scenario_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_runs_account_id ON runs (account_id)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_stats_hash ON runs (stats_hash) WHERE stats_hash <> ''`,
 
 		`CREATE TABLE IF NOT EXISTS worker_job_runs (
 			id BIGSERIAL PRIMARY KEY,
