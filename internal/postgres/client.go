@@ -1,4 +1,4 @@
-package supabase
+package postgres
 
 import (
 	"context"
@@ -9,21 +9,21 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Client wraps a shared Supabase Postgres connection pool.
+// Client wraps a shared Postgres connection pool.
 type Client struct {
 	pool *pgxpool.Pool
 }
 
-// NewClient creates a Supabase connection pool.
+// NewClient creates a Postgres connection pool.
 func NewClient(ctx context.Context, databaseURL string) (*Client, error) {
 	databaseURL = strings.TrimSpace(databaseURL)
 	if databaseURL == "" {
-		return nil, fmt.Errorf("supabase database url is required")
+		return nil, fmt.Errorf("database url is required")
 	}
 
 	cfg, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
-		return nil, fmt.Errorf("parse supabase database url: %w", err)
+		return nil, fmt.Errorf("parse database url: %w", err)
 	}
 
 	cfg.MaxConnIdleTime = 30 * time.Second
@@ -32,7 +32,7 @@ func NewClient(ctx context.Context, databaseURL string) (*Client, error) {
 
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("open supabase pool: %w", err)
+		return nil, fmt.Errorf("open postgres pool: %w", err)
 	}
 
 	return &Client{pool: pool}, nil
@@ -49,7 +49,7 @@ func (c *Client) Pool() *pgxpool.Pool {
 // Ping checks database reachability.
 func (c *Client) Ping(ctx context.Context) error {
 	if c == nil || c.pool == nil {
-		return fmt.Errorf("supabase client is not configured")
+		return fmt.Errorf("postgres client is not configured")
 	}
 	return c.pool.Ping(ctx)
 }
