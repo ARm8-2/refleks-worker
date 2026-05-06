@@ -11,7 +11,7 @@ import (
 	_ "time/tzdata"
 
 	"refleks-worker/internal/config"
-	"refleks-worker/internal/supabase"
+	"refleks-worker/internal/postgres"
 	"refleks-worker/internal/worker"
 	"refleks-worker/internal/worker/jobconfig"
 	"refleks-worker/internal/worker/jobs/benchmarksync"
@@ -42,16 +42,16 @@ func run() error {
 	bootstrapCtx, bootstrapCancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer bootstrapCancel()
 
-	dbClient, err := supabase.NewClient(bootstrapCtx, cfg.SupabaseDBURL)
+	dbClient, err := postgres.NewClient(bootstrapCtx, cfg.DatabaseURL)
 	if err != nil {
-		return fmt.Errorf("init supabase client: %w", err)
+		return fmt.Errorf("init postgres client: %w", err)
 	}
 	defer dbClient.Close()
 
 	if err := dbClient.Ping(bootstrapCtx); err != nil {
-		return fmt.Errorf("ping supabase: %w", err)
+		return fmt.Errorf("ping postgres: %w", err)
 	}
-	logger.Info("supabase connected")
+	logger.Info("postgres connected")
 
 	if err := schema.Ensure(bootstrapCtx, dbClient.Pool()); err != nil {
 		return fmt.Errorf("ensure schema: %w", err)

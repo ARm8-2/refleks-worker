@@ -8,13 +8,13 @@ Standalone Go 1.24 worker service for expensive background tasks running alongsi
 2. Syncs benchmark definitions from a JSON file on disk into normalized database tables.
 3. Refreshes cached scenario score and sensitivity distributions used by the public database/API.
 
-The worker is designed to run as a separate container on the same server as the API and use the same Supabase database.
+The worker is designed to run as a separate container on the same server as the API and use the same Postgres database.
 
 ## Project layout
 
 1. `cmd/worker`: worker entrypoint and process lifecycle.
 2. `internal/config`: env loading and validation.
-3. `internal/supabase`: shared pgx connection pool.
+3. `internal/postgres`: shared pgx connection pool.
 4. `internal/worker/schema`: idempotent schema bootstrap.
 5. `internal/worker/state`: job run tracking and state persistence.
 6. `internal/worker/jobs/benchmarksync`: JSON file fingerprinting + benchmark upsert logic.
@@ -41,7 +41,7 @@ If `WORKER_RUN_ON_STARTUP=true`, all jobs also run once on container startup in 
 
 Worker bootstraps required tables idempotently at startup.
 
-1. Core shared tables (if missing): `accounts`, `scenarios`, `runs`.
+1. Core shared tables (if missing): `players`, `scenarios`, `runs`.
 2. Worker control tables: `worker_job_runs`, `worker_job_state`, `worker_job_config`.
 3. Benchmark tables:
 	- `benchmarks`
@@ -76,8 +76,9 @@ The worker now enriches benchmark definitions with ordered scenario names and pe
 ## Local run
 
 1. Copy `.env.example` to `.env` and fill real values.
-2. Ensure benchmark source file exists at configured path.
-3. Run:
+2. Point the worker at the self-hosted Postgres container with either `DATABASE_URL` or `POSTGRES_HOST` / `POSTGRES_PORT` / `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD`.
+3. Ensure benchmark source file exists at configured path.
+4. Run:
 
 ```bash
 go run ./cmd/worker

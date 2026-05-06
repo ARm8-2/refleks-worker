@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -36,7 +38,7 @@ type Config struct {
 	JobTimeout   time.Duration
 	RunOnStartup bool
 
-	SupabaseDBURL string
+	DatabaseURL string
 
 	LeaderboardCron   string
 	ScenarioStatsCron string
@@ -84,9 +86,9 @@ func Load(version string) (Config, error) {
 		return Config{}, fmt.Errorf("WORKER_TIMEZONE must be a valid IANA timezone: %w", err)
 	}
 
-	supabaseDBURL := strings.TrimSpace(os.Getenv("SUPABASE_DB_URL"))
-	if supabaseDBURL == "" {
-		return Config{}, fmt.Errorf("SUPABASE_DB_URL is required")
+	databaseURL, err := loadDatabaseURL()
+	if err != nil {
+		return Config{}, err
 	}
 
 	resolvedVersion := envOrDefault("APP_VERSION", version)
@@ -103,7 +105,7 @@ func Load(version string) (Config, error) {
 		JobTimeout:   jobTimeout,
 		RunOnStartup: runOnStartup,
 
-		SupabaseDBURL: supabaseDBURL,
+		DatabaseURL: databaseURL,
 
 		LeaderboardCron:   strings.TrimSpace(envOrDefault("LEADERBOARD_CRON", defaultLeaderboardCron)),
 		ScenarioStatsCron: strings.TrimSpace(envOrDefault("SCENARIO_STATS_CRON", defaultScenarioStatsCron)),
@@ -197,6 +199,58 @@ func envDuration(key string, fallback time.Duration) (time.Duration, error) {
 		return 0, fmt.Errorf("%s must be a duration (for example 30s, 5m): %w", key, err)
 	}
 	return v, nil
+}
+
+func loadDatabaseURL() (string, error) {
+	ensureEnvLoaded()
+
+	if databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL")); databaseURL != "" {
+		return databaseURL, nil
+	}
+
+	host := strings.TrimSpace(envOrDefault("POSTGRES_HOST", "postgres"))
+	port := strings.TrimSpace(envOrDefault("POSTGRES_PORT", "5432"))
+	database := strings.TrimSpace(os.Getenv("POSTGRES_DB"))
+	user := strings.TrimSpace(os.Getenv("POSTGRES_USER"))
+	password := strings.TrimSpace(os.Getenv("POSTGRES_PASSWORD"))
+	sslMode := strings.TrimSpace(envOrDefault("POSTGRES_SSLMODE", "disable"))
+
+	if host == "" {
+		return "", fmt.Errorf("POSTGRES_HOST must not be empty")
+	}
+	if port == "" {
+		return "", fmt.Errorf("POSTGRES_PORT must not be empty")
+	}
+	if _, err := strconv.Atoi(port); err != nil {
+		return "", fmt.Errorf("POSTGRES_PORT must be a valid integer: %w", err)
+	}
+	if database == "" {
+		return "", fmt.Errorf("DATABASE_URL or POSTGRES_DB is required")
+	}
+	if user == "" {
+		return "", fmt.Errorf("DATABASE_URL or POSTGRES_USER is required")
+	}
+	if sslMode == "" {
+		return "", fmt.Errorf("POSTGRES_SSLMODE must not be empty")
+	}
+
+	connectionUser := url.User(user)
+	if password != "" {
+		connectionUser = url.UserPassword(user, password)
+	}
+
+	connectionURL := &url.URL{
+		Scheme: "postgresql",
+		User:   connectionUser,
+		Host:   net.JoinHostPort(host, port),
+		Path:   database,
+	}
+
+	query := url.Values{}
+	query.Set("sslmode", sslMode)
+	connectionURL.RawQuery = query.Encode()
+
+	return connectionURL.String(), nil
 }
 
 func parseLogLevel(value string) (slog.Level, error) {
