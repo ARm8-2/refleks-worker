@@ -45,7 +45,7 @@ func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
 			scenario_id BIGINT NOT NULL REFERENCES scenarios(id) ON DELETE RESTRICT,
 			hash CHAR(64) NOT NULL,
 			file_name TEXT NOT NULL,
-			epoch_milli BIGINT NOT NULL,
+			played_at TIMESTAMPTZ NOT NULL,
 			size_bytes BIGINT NOT NULL,
 			object_key TEXT NOT NULL,
 			format_version SMALLINT NOT NULL DEFAULT 1,
@@ -64,7 +64,7 @@ func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
 			UNIQUE (object_key)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_runs_uploaded_at ON runs (uploaded_at DESC)`,
-		`CREATE INDEX IF NOT EXISTS idx_runs_epoch ON runs (epoch_milli DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_runs_played_at ON runs (played_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_runs_scenario_id ON runs (scenario_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_runs_player_id ON runs (player_id)`,
 
@@ -171,7 +171,7 @@ func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
 			player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
 			rank INT NOT NULL,
 			best_score DOUBLE PRECISION NOT NULL,
-			best_epoch_milli BIGINT,
+			best_played_at TIMESTAMPTZ,
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			PRIMARY KEY (scenario_id, player_id)
 		)`,
@@ -184,7 +184,7 @@ func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
 			rank INT NOT NULL,
 			composite_score DOUBLE PRECISION NOT NULL,
 			matched_scenarios INT NOT NULL,
-			last_epoch_milli BIGINT,
+			last_played_at TIMESTAMPTZ,
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			PRIMARY KEY (difficulty_id, player_id)
 		)`,

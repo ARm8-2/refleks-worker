@@ -74,7 +74,7 @@ type Environment struct {
 // File is the decoded representation of a .refleks payload.
 type File struct {
 	FileName      string
-	EpochMilli    int64
+	PlayedAt      int64
 	FormatVersion uint8
 	Stats         map[string]any
 	Events        [][]string
@@ -97,7 +97,7 @@ func Parse(raw []byte) (File, error) {
 	}
 
 	compression := raw[5]
-	epochMilli := int64(binary.LittleEndian.Uint64(raw[6:14]))
+	playedAt := int64(binary.LittleEndian.Uint64(raw[6:14]))
 	payload := raw[runHeaderSize : len(raw)-runChecksumSize]
 
 	wantChecksum := binary.LittleEndian.Uint64(raw[len(raw)-runChecksumSize:])
@@ -145,7 +145,7 @@ func Parse(raw []byte) (File, error) {
 
 	return File{
 		FileName:      fileName,
-		EpochMilli:    epochMilli,
+		PlayedAt:      playedAt,
 		FormatVersion: version,
 		Stats:         stats,
 		Events:        events,
