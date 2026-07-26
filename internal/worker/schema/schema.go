@@ -196,6 +196,14 @@ func Ensure(ctx context.Context, pool *pgxpool.Pool) error {
 			enabled BOOLEAN NOT NULL DEFAULT true,
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
+
+		`CREATE TABLE IF NOT EXISTS run_sync_config (
+			key TEXT PRIMARY KEY,
+			value BOOLEAN NOT NULL DEFAULT true,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+
+		`ALTER TABLE runs ALTER COLUMN object_key DROP NOT NULL`,
 	}
 
 	for _, statement := range statements {
