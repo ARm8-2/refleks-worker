@@ -12,7 +12,7 @@ func Defaults() map[string]bool {
 	return map[string]bool{
 		"sync_enabled":                true,
 		"store_runs_enabled":          true,
-		"store_anon_only":             false,
+		"store_non_anon_only":         false,
 		"store_with_mouse_trace_only": false,
 	}
 }
