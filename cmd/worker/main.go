@@ -17,6 +17,7 @@ import (
 	"refleks-worker/internal/worker/jobs/benchmarksync"
 	"refleks-worker/internal/worker/jobs/leaderboard"
 	"refleks-worker/internal/worker/jobs/scenariostats"
+	"refleks-worker/internal/worker/runsyncconfig"
 	"refleks-worker/internal/worker/scheduler"
 	"refleks-worker/internal/worker/schema"
 	"refleks-worker/internal/worker/state"
@@ -60,6 +61,7 @@ func run() error {
 
 	stateStore := state.NewStore(dbClient.Pool())
 	jobConfigStore := jobconfig.NewStore(dbClient.Pool())
+	runSyncConfigStore := runsyncconfig.NewStore(dbClient.Pool())
 	runner := worker.NewRunner(logger, stateStore, cfg.JobTimeout)
 
 	benchmarkSyncJob, err := benchmarksync.NewService(logger, dbClient.Pool(), stateStore, benchmarksync.Config{
@@ -92,6 +94,10 @@ func run() error {
 	schedulerSvc.AddJob(scenarioStatsJob)
 
 	// Seed default configs into the DB (no-op for existing rows).
+	if err := runSyncConfigStore.Seed(bootstrapCtx, runsyncconfig.Defaults()); err != nil {
+		return fmt.Errorf("seed run sync config: %w", err)
+	}
+
 	if err := jobConfigStore.Seed(bootstrapCtx, []jobconfig.JobConfig{
 		{JobName: benchmarkSyncJob.Name(), CronExpr: cfg.BenchmarkSyncCron, Enabled: true},
 		{JobName: leaderboardJob.Name(), CronExpr: cfg.LeaderboardCron, Enabled: true},
