@@ -17,11 +17,15 @@ The worker is designed to run as a separate container on the same server as the 
 3. `internal/postgres`: shared pgx connection pool.
 4. `internal/worker/schema`: idempotent schema bootstrap.
 5. `internal/worker/state`: job run tracking and state persistence.
-6. `internal/worker/jobs/benchmarksync`: JSON file fingerprinting + benchmark upsert logic.
-7. `internal/worker/jobs/leaderboard`: scenario and benchmark leaderboard refresh job.
-8. `internal/worker/jobs/scenariostats`: cached scenario score and sensitivity distribution refresh job.
-9. `internal/worker/refleks`: retained `.refleks` binary parser for future raw-file ingestion work.
-10. `internal/worker/scheduler`: gocron wiring.
+6. `internal/worker/jobconfig`: job schedule config persistence (`worker_job_config`).
+7. `internal/worker/runsyncconfig`: run sync runtime config persistence (`run_sync_config`).
+8. `internal/worker/jobs/benchmarksync`: JSON file fingerprinting + benchmark upsert logic.
+9. `internal/worker/jobs/leaderboard`: scenario and benchmark leaderboard refresh job.
+10. `internal/worker/jobs/scenariostats`: cached scenario score and sensitivity distribution refresh job.
+11. `internal/worker/refleks`: retained `.refleks` binary parser for future raw-file ingestion work.
+12. `internal/worker/scheduler`: gocron wiring.
+13. `internal/worker/job.go`: `Job` interface definition.
+14. `internal/worker/runner.go`: job execution wrapper with timeout and run-state persistence.
 
 ## Scheduling model
 
@@ -31,18 +35,20 @@ Jobs are scheduled internally with gocron, not host-level cron.
 2. `SCENARIO_STATS_CRON`: rebuilds cached scenario distributions for `score` and `sens_cm360`.
 3. `LEADERBOARD_CRON`: rebuilds current leaderboard tables.
 
-If `WORKER_RUN_ON_STARTUP=true`, all jobs also run once on container startup in this order:
+If `WORKER_RUN_ON_STARTUP=true` (default), all enabled jobs also run once on container startup in this order:
 
 1. benchmark sync
 2. scenario stats refresh
 3. leaderboard refresh
+
+Jobs that are disabled in `worker_job_config` are skipped during startup.
 
 ## Database tables managed by worker
 
 Worker bootstraps required tables idempotently at startup.
 
 1. Core shared tables (if missing): `players`, `scenarios`, `runs`.
-2. Worker control tables: `worker_job_runs`, `worker_job_state`, `worker_job_config`.
+2. Worker control tables: `worker_job_runs`, `worker_job_state`, `worker_job_config`, `run_sync_config`.
 3. Benchmark tables:
 	- `benchmarks`
 	- `benchmark_difficulties`
@@ -59,19 +65,8 @@ Notes:
 1. One scenario can map to multiple benchmark difficulties through `benchmark_difficulty_scenarios`.
 2. Benchmark source sync is hash-based and idempotent.
 3. Scenario rows cache percentile-clipped histogram summaries for `score` and `sens_cm360`, so the API can render charts without rescanning `runs`, and `updated_at` reflects the last real scenario-row change.
-4. Job schedules are seeded from env defaults once and then managed through `worker_job_config`.
+4. Job schedules and run-sync toggles are seeded from env defaults once and then managed through `worker_job_config` and `run_sync_config` respectively.
 5. Jobs are execution-tracked in `worker_job_runs` with status and details JSON.
-
-## Benchmark sync source file
-
-By default the worker reads:
-
-1. Directory: `BENCHMARK_SYNC_SOURCE_DIR=/data/benchmarks`
-2. File: `BENCHMARK_SYNC_SOURCE_FILE=benchmarks_data.json`
-
-Use a bind mount or volume so uploaded benchmark JSON is visible in the worker container.
-
-The worker now enriches benchmark definitions with ordered scenario names and per-scenario rank thresholds from the Kovaaks progress endpoint (using a random 17-digit Steam ID). Ordered rank definitions are taken directly from `rankColors` in the source `benchmarks_data.json` and preserved exactly as written.
 
 ## Local run
 
@@ -84,12 +79,32 @@ The worker now enriches benchmark definitions with ordered scenario names and pe
 go run ./cmd/worker
 ```
 
+## Benchmark sync source file
+
+By default the worker reads:
+
+1. Directory: `BENCHMARK_SYNC_SOURCE_DIR=/data/benchmarks`
+2. File: `BENCHMARK_SYNC_SOURCE_FILE=benchmarks_data.json`
+
+Use a bind mount or volume so uploaded benchmark JSON is visible in the worker container.
+
+The worker enriches benchmark definitions with ordered scenario names and per-scenario rank thresholds from the Kovaaks progress endpoint (using a random 17-digit Steam ID). Ordered rank definitions are taken directly from `rankColors` in the source `benchmarks_data.json` and preserved exactly as written.
+
 ## Docker build and run
 
 Build:
 
 ```bash
 docker build -f Dockerfile -t refleks-worker:latest .
+```
+
+For a reproducible build tag, pass the commit hash as the version:
+
+```bash
+docker build \
+	--build-arg VERSION=$(git rev-parse --short HEAD) \
+	-f Dockerfile \
+	-t refleks-worker:latest .
 ```
 
 Run:
@@ -100,3 +115,4 @@ docker run --rm \
   -v /srv/refleks/benchmarks:/data/benchmarks:ro \
   refleks-worker:latest
 ```
+
